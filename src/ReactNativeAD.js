@@ -1,5 +1,5 @@
 // @flow
-import React, {WebView, Dimensions, AsyncStorage} from 'react-native'
+import React, { AsyncStorage} from 'react-native'
 import CONST from './const.js'
 import Timer from 'react-timer-mixin'
 import log from './logger'
@@ -50,9 +50,7 @@ export default class ReactNativeAD {
     if(config === null || config === void 0)
       throw new Error('Invalid ADConfig object', config)
     if(typeof config.client_id !== 'string')
-      throw new Error('client_id is not provided.')    
-    if (config.tenant != null)
-        config.token_uri = defaultTokenUrl.replace('common', config.tenant)
+      throw new Error('client_id is not provided.')
     this.config = config
     this.credentials = {}
     _contexts[config.client_id] = this
@@ -118,7 +116,7 @@ export default class ReactNativeAD {
     if(result !== null) {
       return result.access_token
     }
-    return null
+    return "null"
   }
 
   /**
@@ -139,8 +137,9 @@ export default class ReactNativeAD {
           else {
             let expires_on = cred.expires_on*1000
             // Token not expired, resolve token
-            if(Date.now() - expires_on <= -60000)
-              return Promise.resolve(cred.access_token)
+            if(Date.now() - expires_on <= -60000) {
+              return Promise.resolve(cred)
+            }
             // Token expired, call refresh token
             else {
               log.debug('cached token expired, refresh token.')
@@ -171,7 +170,7 @@ export default class ReactNativeAD {
         log.debug('refresh token with config=', config, `grant_type=${grantType}`)
         this.grantAccessToken(grantType, config)
             .then((resp:GrantTokenResp) => {
-              resolve(resp.response.access_token)
+              resolve(resp.response)
             })
             .catch((err) => {
               log.warn(err)

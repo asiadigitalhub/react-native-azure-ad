@@ -1,9 +1,9 @@
 // @flow
 import React, {Component} from 'react'
-import {WebView, Dimensions, AsyncStorage, Platform} from 'react-native'
+import { Dimensions} from 'react-native'
+import WebView from 'react-native-webview'
 import CONST from './const.js'
 import ReactNativeAD from './ReactNativeAD.js'
-import Timer from 'react-timer-mixin'
 import log from './logger'
 
 const loginUrl = 'https://login.microsoftonline.com/<tenant id>/oauth2/authorize'
@@ -13,13 +13,11 @@ export default class ADLoginView extends React.Component {
 
   props : {
     onSuccess? : ?Function,
-    renderError? : ?Function,
     needLogout? : bool,
     style : any,
     onURLChange : Function,
     context : ReactNativeAD,
     hideAfterLogin? : bool,
-    userAgent?: string
   };
 
   state : {
@@ -31,7 +29,6 @@ export default class ADLoginView extends React.Component {
     authority_host : loginUrl,
     tenant : 'common',
     onSuccess : () => {},
-    renderError: () => {},
     onPageRequest : null
   };
 
@@ -81,7 +78,7 @@ export default class ADLoginView extends React.Component {
   render() {
     // Fix visibility problem on Android webview
     let js = `document.getElementsByTagName('body')[0].style.height = '${Dimensions.get('window').height}px';`
-    let renderError = this.props.renderError || function () { }
+
     return (
         this.state.visible ? (<WebView
           ref="ADLoginView"
@@ -108,8 +105,6 @@ export default class ADLoginView extends React.Component {
           onShouldStartLoadWithRequest={(e) => {
             return true
           }}
-          userAgent={this.props.userAgent}
-          renderError={() => renderError(this.refs.ADLoginView.reload)}
           startInLoadingState={false}
           injectedJavaScript={js}
           scalesPageToFit={true}/>) : null
@@ -128,14 +123,12 @@ export default class ADLoginView extends React.Component {
     let context = this.props.context || null
     let redirect = context.getConfig().redirect_uri
     let prompt = context.getConfig().prompt
-    let login_hint = context.getConfig().login_hint
 
     if(context !== null) {
       let result = `${authUrl}?response_type=code` +
              `&client_id=${context.getConfig().client_id}` +
              (redirect ? `&redirect_url=${context.getConfig().redirect_uri}&nonce=rnad-${Date.now()}` : '') +
-             (prompt ? `&prompt=${context.getConfig().prompt}` : '') +
-             (login_hint ? `&login_hint=${context.getConfig().login_hint}` : '')
+             (prompt ? `&prompt=${context.getConfig().prompt}` : '')
              
       if(this._needRedirect)
         result = `https://login.windows.net/${this.props.context.getConfig().client_id}/oauth2/logout`
@@ -213,54 +206,65 @@ export default class ADLoginView extends React.Component {
     // Transform resource string to array
     if( typeof resources === 'string')
       resources = [resources]
-    else if(!Array.isArray(resources) || resources.length===0)
-      resources = ["common"];
+    else if(Array.isArray(resources))
+      resources = resources.length === 0 ? null : resources
 
     log.verbose('ADLoginView get access token for resources=', resources)
 
-
-    /* NOTE: as of 11/15/2018, MS has changed the token behavior in that we cannot re-use the same auth-code more than once to get all the resource tokens. 
-    *  Instead we must use the refresh token result from the first token request to get other resource tokens. 
-    *  https://docs.microsoft.com/en-us/azure/active-directory/fundamentals/whats-new#change-notice-authorization-codes-will-no-longer-be-available-for-reuse
-    *  https://social.msdn.microsoft.com/Forums/en-US/4192e141-309a-4dd6-a5c9-f1a8ce32f4ca/aadsts54005-oauth2-authorization-code-was-already-redeemed?forum=WindowsAzureAD
-    */
-
     let promises:Array<Promise> = []
-    let [resourceFirst, ...resourcesOther] = resources;
-    let config = { client_id, redirect_uri, code, client_secret, resource : resourceFirst }
+    let config = { client_id, redirect_uri, code, client_secret,
+      // set resource to common by default
+      resource : 'common'
+    }
 
-    return context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, config).then(cred => {
-      //remove AUTHORIZATION_CODE specific properties because we are now going to use the REFRESH_TOKEN for all the remaining resources
-      delete config.code;
-      delete config.redirect_uri;
-      config.refresh_token = cred.response.refresh_token;
+    
+    if(resources === null || resources === void 0)
+    {
+      promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, config))
+    }
+    // Get access_token for each resource
+    else {
+      promises = resources.map( (rcs, i) => {
+        let cfg = Object.assign({}, config, {resource : rcs})
+        return context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE , cfg)
+      })
 
-      //get array of promises for all the resource token acquisitions to perform in parallel
-      let promises = resourcesOther.map(resource => {
-        let cfg = Object.assign({},config,{resource});
-        return context.grantAccessToken(CONST.GRANT_TYPE.REFRESH_TOKEN, cfg);
-      });
+      // promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE,  Object.assign({}, config, {resource : resources[0]})))
+      // setTimeout(async()=>{
+      //   promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, Object.assign({}, config, {resource : resources[1]})));
+        
+      // },1000);
+      
+      // for (let i = 0 ; i < 1; i++){
+      //   let cfg = Object.assign({}, config, {resource : resources[1]})
+      
+      //   promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, cfg))
+       
+      // }
+      
+    }
 
-      //wait on the resource promises, then finalize
-      return Promise.all(promises).then((resps:Array<GrantTokenResp>) => {
+    return Promise.all(promises).then((resps:Array<GrantTokenResp>) => {
+      console.log('Complete')
+      log.verbose('ADLoginView response access info ', resps)
+     
+      if(!this.props.context)
+        throw new Error('value of property `context` is invalid=', this.props.context)
 
-        log.verbose('ADLoginView response access info ', resps)
+      let context = this.props.context
+      let onSuccess = this.props.onSuccess || function(){}
 
-        if(!this.props.context)
-          throw new Error('value of property `context` is invalid=', this.props.context)
+      // trigger loggined finished event
+      if(context !== null && typeof this.props.onSuccess === 'function')
+        onSuccess(context.getCredentials())
+      this._lock = false
 
-        let context = this.props.context
-        let onSuccess = this.props.onSuccess || function(){}
-
-        // trigger loggined finished event
-        if(context !== null && typeof this.props.onSuccess === 'function')
-          onSuccess(context.getCredentials())
-        this._lock = false
-
-      }).catch((err) => {
-        throw new Error('Failed to acquire token for resources', err.stack)
-      });
-    });
+    }).catch((err) => {
+      throw new Error('Failed to acquire token for resources', err.stack)
+    }
+    )
   }
+
+
 
 }
