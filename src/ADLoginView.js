@@ -1,77 +1,79 @@
 // @flow
-import React, {Component} from 'react'
-import { Dimensions} from 'react-native'
+import React from 'react'
+import { Dimensions } from 'react-native'
 import WebView from 'react-native-webview'
 import CONST from './const.js'
 import ReactNativeAD from './ReactNativeAD.js'
 import log from './logger'
+import Timer from '../../../utils/Timer'
 
 const loginUrl = 'https://login.microsoftonline.com/<tenant id>/oauth2/authorize'
 const tokenUrl = 'https://login.microsoftonline.com/common/oauth2/token'
 
 export default class ADLoginView extends React.Component {
 
-  props : {
-    onSuccess? : ?Function,
-    needLogout? : bool,
-    style : any,
-    onURLChange : Function,
-    context : ReactNativeAD,
-    hideAfterLogin? : bool,
+  props: {
+    onSuccess?: ?Function,
+    needLogout?: bool,
+    style: any,
+    onURLChange: Function,
+    context: ReactNativeAD,
+    hideAfterLogin?: bool,
   };
 
-  state : {
-    page : string,
-    visible : bool
+  state: {
+    page: string,
+    visible: bool
   };
 
   static defaultProps = {
-    authority_host : loginUrl,
-    tenant : 'common',
-    onSuccess : () => {},
-    onPageRequest : null
+    authority_host: loginUrl,
+    tenant: 'common',
+    onSuccess: () => { },
+    onPageRequest: null
   };
 
-  _needRedirect : bool;
-  _onTokenGranted : ()=>{};
-  _lock : bool;
-  _accessToken : Object;
+  _needRedirect: bool;
+  _onTokenGranted: () => {};
+  _lock: bool;
+  _accessToken: Object;
 
-  constructor(props:any){
+  constructor(props: any) {
     super(props)
-    if(!this.props.context instanceof ReactNativeAD)
+    if (!this.props.context instanceof ReactNativeAD)
       throw new Error('property `context` of ADLoginView should be an instance of ReactNativeAD, but got', this.props.context)
     let context = this.props.context
     let tenant = context.getConfig().tenant
     this._needRedirect = this.props.needLogout || false
     this.state = {
-      page : this._getLoginUrl(tenant || 'common'),
-      visible : true,
+      page: this._getLoginUrl(tenant || 'common'),
+      visible: true,
     }
     this._lock = false
   }
 
-  componentWillUpdate(nextProps:any, nextState:any):any {
-    if(this.state.visible === nextState.visible && this.state.page === nextState.page)
+  componentWillUpdate(nextProps: any, nextState: any): any {
+    if (this.state.visible === nextState.visible && this.state.page === nextState.page)
       return false
     return true
   }
 
-  componentDidUpdate(prevProps:any, prevState:any) {
-    if(prevState.visible !== this.state.visible)
+  componentDidUpdate(prevProps: any, prevState: any) {
+    if (prevState.visible !== this.state.visible)
       this.props.onVisibilityChange && this.props.onVisibilityChange(this.state.visible)
     log.debug('ADLoginView updated.')
   }
 
-  componentWillReceiveProps(nextProps){
-    if(!this.props.needLogout && nextProps.needLogout) {
+  componentWillReceiveProps(nextProps) {
+    if (!this.props.needLogout && nextProps.needLogout) {
       let context = this.props.context
       let tenant = context.getConfig().tenant
       this._needRedirect = nextProps.needLogout || false
       this.setState({
-        page : this._getLoginUrl(tenant || 'common'),
-        visible : true
+        page: this._getLoginUrl(tenant || 'common'),
+        visible: true
       })
+
     }
   }
 
@@ -80,34 +82,36 @@ export default class ADLoginView extends React.Component {
     let js = `document.getElementsByTagName('body')[0].style.height = '${Dimensions.get('window').height}px';`
 
     return (
-        this.state.visible ? (<WebView
-          ref="ADLoginView"
-          automaticallyAdjustContentInsets={false}
-          style={[this.props.style, {
-            flex:1,
-            alignSelf : 'stretch',
-            width : Dimensions.get('window').width,
-            height : Dimensions.get('window').height
-          }]}
-          source={{uri: this.state.page}}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          onLoadEnd={()=>{
-            if(this._needRedirect){
+      this.state.visible ? (<WebView
+        ref="ADLoginView"
+        automaticallyAdjustContentInsets={false}
+        style={[this.props.style, {
+          flex: 1,
+          alignSelf: 'stretch',
+          width: Dimensions.get('window').width,
+          height: Dimensions.get('window').height
+        }]}
+        source={{ uri: this.state.page }}
+        domStorageEnabled={true}
+        onLoadEnd={() => {
+          Timer.setTimeout(this, 'DelayForLoadOnAndroid', () => {
+            if (this._needRedirect) {
               this._needRedirect = false
               let tenant = this.props.context.getConfig().tenant || 'common'
-              this.setState({page : this._getLoginUrl(tenant)})
+              this.setState({ page: this._getLoginUrl(tenant) })
             }
-          }}
-          decelerationRate="normal"
-          javaScriptEnabledAndroid={true}
-          onNavigationStateChange={this._handleADToken.bind(this)}
-          onShouldStartLoadWithRequest={(e) => {
-            return true
-          }}
-          startInLoadingState={false}
-          injectedJavaScript={js}
-          scalesPageToFit={true}/>) : null
+          }, 1500);
+        }}
+        decelerationRate="normal"
+        javaScriptEnabled={true}
+        cacheEnabled={false}
+        onNavigationStateChange={this._handleADToken.bind(this)}
+        onShouldStartLoadWithRequest={(e) => {
+          return true
+        }}
+        startInLoadingState={false}
+        injectedJavaScript={js}
+        scalesPageToFit={true} />) : null
     )
   }
 
@@ -117,21 +121,22 @@ export default class ADLoginView extends React.Component {
    *                        values is `common`.
    * @return {string} The Authority host URI.
    */
-  _getLoginUrl(tenant:string='common'):string{
+  _getLoginUrl(tenant: string = 'common'): string {
 
     let authUrl = String(this.props.authority_host || loginUrl).replace('<tenant id>', tenant)
     let context = this.props.context || null
     let redirect = context.getConfig().redirect_uri
     let prompt = context.getConfig().prompt
 
-    if(context !== null) {
+    if (context !== null) {
       let result = `${authUrl}?response_type=code` +
-             `&client_id=${context.getConfig().client_id}` +
-             (redirect ? `&redirect_url=${context.getConfig().redirect_uri}&nonce=rnad-${Date.now()}` : '') +
-             (prompt ? `&prompt=${context.getConfig().prompt}` : '')
-             
-      if(this._needRedirect)
+        `&client_id=${context.getConfig().client_id}` +
+        (redirect ? `&redirect_url=${context.getConfig().redirect_uri}&nonce=rnad-${Date.now()}` : '') +
+        (prompt ? `&prompt=${context.getConfig().prompt}` : '')
+
+      if (this._needRedirect) {
         result = `https://login.windows.net/${this.props.context.getConfig().client_id}/oauth2/logout`
+      }
       return result
     }
     else {
@@ -144,25 +149,24 @@ export default class ADLoginView extends React.Component {
    * authorization code in url, it will triggers authentication flow.
    * @param  {object} e Navigation state change event object.
    */
-  _handleADToken(e:{ url:string }):any{
+  _handleADToken(e: { url: string }): any {
     log.verbose('ADLoginView navigate to', e.url)
-    if(this._lock)
+    if (this._lock)
       return true
     let code = /((\?|\&)code\=)[^\&]+/.exec(e.url)
 
-    if(this._needRedirect) {
+    if (this._needRedirect) {
       // this._needRedirect = false
       return true
     }
-
-    if(this.props.onURLChange)
+    if (this.props.onURLChange)
       this.props.onURLChange(e)
 
-    if( code !== null ){
+    if (code !== null) {
       this._lock = true
       log.verbose('ADLoginView._handleADToken code=', code[0])
-      code = String(code[0]).replace(/(\?|\&)?code\=/,'')
-      this.setState({visible : !this.props.hideAfterLogin})
+      code = String(code[0]).replace(/(\?|\&)?code\=/, '')
+      this.setState({ visible: !this.props.hideAfterLogin })
       this.props.onVisibilityChange && this.props.onVisibilityChange(false)
       this._getResourceAccessToken(code).catch((err) => {
         log.error('ADLoginView._getResourceAccessToken', err)
@@ -178,10 +182,10 @@ export default class ADLoginView extends React.Component {
    * Check required properies and show error.
    * @param  {ReactNativeADConfig} config Configration object input.
    */
-  _checkProperties(config:any) {
+  _checkProperties(config: any) {
 
-    ['client_id', 'redirect_uri', 'authority_host'].forEach((prop)=>{
-      if( !config.hasOwnProperty(prop) )
+    ['client_id', 'redirect_uri', 'authority_host'].forEach((prop) => {
+      if (!config.hasOwnProperty(prop))
         throw new Error(`ReactNativeAD config object must have \`${prop}\` property`)
     })
 
@@ -193,70 +197,72 @@ export default class ADLoginView extends React.Component {
    *                      callback.
    * @return {Promise<void>}
    */
-  _getResourceAccessToken(code:string):Promise {
+  _getResourceAccessToken(code: string): Promise {
 
     let context = this.props.context
 
-    if(!context)
+    if (!context)
       throw new Error('property `context` of ADLoginView should not be null/undefined')
 
-    let adConfig:ADConfig = this.props.context.getConfig()
+    let adConfig: ADConfig = this.props.context.getConfig()
 
-    let {client_id=null, redirect_uri=null, client_secret=null, resources=null} = adConfig
+    let { client_id = null, redirect_uri = null, client_secret = null, resources = null } = adConfig
     // Transform resource string to array
-    if( typeof resources === 'string')
+    if (typeof resources === 'string')
       resources = [resources]
-    else if(Array.isArray(resources))
+    else if (Array.isArray(resources))
       resources = resources.length === 0 ? null : resources
 
     log.verbose('ADLoginView get access token for resources=', resources)
 
-    let promises:Array<Promise> = []
-    let config = { client_id, redirect_uri, code, client_secret,
+    let promises: Array<Promise> = []
+    let config = {
+      client_id, redirect_uri, code, client_secret,
       // set resource to common by default
-      resource : 'common'
+      resource: 'common'
     }
 
-    
-    if(resources === null || resources === void 0)
-    {
+
+    if (resources === null || resources === void 0) {
       promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, config))
     }
     // Get access_token for each resource
     else {
-      promises = resources.map( (rcs, i) => {
-        let cfg = Object.assign({}, config, {resource : rcs})
-        return context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE , cfg)
+      promises = resources.map((rcs, i) => {
+        let cfg = Object.assign({}, config, { resource: rcs })
+        return context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, cfg)
       })
 
       // promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE,  Object.assign({}, config, {resource : resources[0]})))
       // setTimeout(async()=>{
       //   promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, Object.assign({}, config, {resource : resources[1]})));
-        
+
       // },1000);
-      
+
       // for (let i = 0 ; i < 1; i++){
       //   let cfg = Object.assign({}, config, {resource : resources[1]})
-      
+
       //   promises.push(context.grantAccessToken(CONST.GRANT_TYPE.AUTHORIZATION_CODE, cfg))
-       
+
       // }
-      
+
     }
 
-    return Promise.all(promises).then((resps:Array<GrantTokenResp>) => {
+    return Promise.all(promises).then((resps: Array<GrantTokenResp>) => {
       console.log('Complete')
       log.verbose('ADLoginView response access info ', resps)
-     
-      if(!this.props.context)
+
+      if (!this.props.context)
         throw new Error('value of property `context` is invalid=', this.props.context)
 
       let context = this.props.context
-      let onSuccess = this.props.onSuccess || function(){}
+      let onSuccess = this.props.onSuccess || function () { }
 
       // trigger loggined finished event
-      if(context !== null && typeof this.props.onSuccess === 'function')
+      if (context !== null && typeof this.props.onSuccess === 'function'){
         onSuccess(context.getCredentials())
+      }
+       
       this._lock = false
 
     }).catch((err) => {
