@@ -70,7 +70,7 @@ export default class ADLoginView extends React.Component {
       let tenant = context.getConfig().tenant
       this._needRedirect = nextProps.needLogout || false
       this.setState({
-        page: this._getLoginUrl(tenant || 'common'),
+      page: this._getLoginUrl(tenant || 'common'),
         visible: true
       })
 
@@ -91,7 +91,11 @@ export default class ADLoginView extends React.Component {
           width: Dimensions.get('window').width,
           height: Dimensions.get('window').height
         }]}
-        source={{ uri: this.state.page }}
+        source={{ uri: this.state.page,
+          headers: {
+            'cache': 'no-cache',
+            'cache-control': 'no-cache',
+          }, }}
         domStorageEnabled={true}
         onLoadEnd={() => {
           Timer.setTimeout(this, 'DelayForLoadOnAndroid', () => {
@@ -100,11 +104,11 @@ export default class ADLoginView extends React.Component {
               let tenant = this.props.context.getConfig().tenant || 'common'
               this.setState({ page: this._getLoginUrl(tenant) })
             }
-          }, 1500);
+          }, 3000);
         }}
         decelerationRate="normal"
         javaScriptEnabled={true}
-        cacheEnabled={false}
+        cacheEnabled={true}
         onNavigationStateChange={this._handleADToken.bind(this)}
         onShouldStartLoadWithRequest={(e) => {
           return true
@@ -122,7 +126,6 @@ export default class ADLoginView extends React.Component {
    * @return {string} The Authority host URI.
    */
   _getLoginUrl(tenant: string = 'common'): string {
-
     let authUrl = String(this.props.authority_host || loginUrl).replace('<tenant id>', tenant)
     let context = this.props.context || null
     let redirect = context.getConfig().redirect_uri
@@ -135,9 +138,11 @@ export default class ADLoginView extends React.Component {
         (prompt ? `&prompt=${context.getConfig().prompt}` : '')
 
       if (this._needRedirect) {
+
         result = `https://login.windows.net/${this.props.context.getConfig().client_id}/oauth2/logout`
       }
       return result
+
     }
     else {
       throw new Error('AD context should not be null/undefined.')
@@ -274,3 +279,4 @@ export default class ADLoginView extends React.Component {
 
 
 }
+
