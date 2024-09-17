@@ -1,5 +1,5 @@
 // @flow
-import AsyncStorage from '@react-native-community/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import CONST from './const.js'
 import Timer from 'react-timer-mixin'
 import log from './logger'
